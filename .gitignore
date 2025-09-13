@@ -2,4 +2,7 @@
 /dist/
 *.tsbuildinfo
 *storybook.log
-storybook-static
+/storybook-static/
+/playwright-report/
+/playwright-output/
+/playwright-snapshots/
