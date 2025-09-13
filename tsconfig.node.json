@@ -22,7 +22,7 @@
     "noUncheckedSideEffectImports": true,
     "exactOptionalPropertyTypes": true,
     "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
+    "noImplicitOverride": true
   },
   "include": ["vite.config.ts", "vitest.config.ts"]
 }
