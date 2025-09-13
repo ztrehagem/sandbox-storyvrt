@@ -13,11 +13,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    outputs:
+      PLAYWRIGHT_VERSION: ${{ steps.get-playwright-version.outputs.PLAYWRIGHT_VERSION }}
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install pnpm
-        run: npm i -g pnpm@10
+      - run: npm i -g pnpm@10
 
       - uses: actions/setup-node@v5
         with:
@@ -30,9 +31,23 @@ jobs:
       - name: Build storybook
         run: pnpm exec storybook build
 
-      - uses: actions/upload-pages-artifact@v3
+      - name: Upload github pages artifact
+        uses: actions/upload-pages-artifact@v3
         with:
           path: storybook-static/
+
+      - name: Upload vrt artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: storybook
+          path: storybook-static/
+          overwrite: true
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Get playwright version
+        id: get-playwright-version
+        run: echo "PLAYWRIGHT_VERSION=$(pnpm exec playwright --version | cut -d ' ' -f 2)" > $GITHUB_OUTPUT
 
   deploy:
     needs: build
@@ -45,6 +60,66 @@ jobs:
       id-token: write
       pages: write
     steps:
-      - name: Deploy to GitHub Pages
+      - uses: actions/deploy-pages@v4
         id: deployment
-        uses: actions/deploy-pages@v4
+
+  vrt-update-snapshots:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.build.outputs.PLAYWRIGHT_VERSION }}
+    strategy:
+      matrix:
+        shardIndex: [1, 2]
+        shardTotal: [2]
+    steps:
+      - uses: actions/checkout@v5
+
+      - run: npm i -g pnpm@10
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download built storybook
+        uses: actions/download-artifact@v5
+        with:
+          name: storybook
+          path: storybook-static/
+
+      - name: Take snapshots
+        run: pnpm run playwright:vrt:update --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
+
+      - name: Upload snapshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-vrt-snapshots-shard-${{ matrix.shardIndex }}
+          path: playwright-snapshots/vrt/
+          retention-days: 1
+          overwrite: true
+          if-no-files-found: error
+
+  vrt-upload-snapshots:
+    needs: vrt-update-snapshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Download sharded snapshots
+        uses: actions/download-artifact@v5
+        with:
+          pattern: playwright-vrt-snapshots-shard-*
+          merge-multiple: true
+          path: playwright-snapshots/vrt/
+
+      - name: Upload snapshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-vrt-snapshots
+          path: playwright-snapshots/vrt/
+          overwrite: true
+          if-no-files-found: error

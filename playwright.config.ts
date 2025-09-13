@@ -1,4 +1,4 @@
-import { defineConfig, devices } from "@playwright/test";
+import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./playwright",
@@ -10,20 +10,22 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: [["html", { outputFolder: "playwright-report" }]],
   use: {
-    // baseURL: 'http://localhost:3000',
+    baseURL: "http://localhost:6006",
     trace: "on-first-retry",
   },
 
-  // webServer: {
-  //   command: 'npm run start',
-  //   url: 'http://localhost:3000',
-  //   reuseExistingServer: !process.env.CI,
-  // },
+  webServer: {
+    command: "pnpm exec http-server --port 6006 storybook-static",
+    url: "http://localhost:6006",
+    reuseExistingServer: !process.env.CI,
+  },
 
   projects: [
     {
-      name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      name: "vrt:chromium",
+      use: {
+        browserName: "chromium",
+      },
     },
   ],
 });
