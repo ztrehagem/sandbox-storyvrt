@@ -94,30 +94,18 @@ jobs:
         id: vrt
         env:
           PLAYWRIGHT_BLOB_OUTPUT_DIR: vrt-shard-report
-        run: |
-          pnpm run playwright:vrt --reporter blob,list --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
-          touch vrt-shard-report/placeholder
+        run: pnpm run playwright:vrt --reporter blob,list --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
         continue-on-error: true
+
+      - name: Create status file
+        run: |
+          echo '{"outcome": "${{ steps.vrt.outcome }}"}' > vrt-shard-report/status-${{ matrix.shardIndex }}.json
 
       - name: Upload sharded report
         uses: actions/upload-artifact@v4
         with:
           name: playwright-vrt-report-shard-${{ matrix.shardIndex }}
           path: vrt-shard-report/
-          retention-days: 1
-          if-no-files-found: error
-
-      - name: Create status file
-        run: |
-          mkdir -p vrt-shard-status
-          echo '{"outcome": "${{ steps.vrt.outcome }}"}' > vrt-shard-status/shard-${{ matrix.shardIndex }}.json
-          touch vrt-shard-status/placeholder
-
-      - name: Upload status file
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-vrt-status-shard-${{ matrix.shardIndex }}
-          path: vrt-shard-status/
           retention-days: 1
           if-no-files-found: error
 
@@ -177,13 +165,13 @@ jobs:
       - name: Download status files
         uses: actions/download-artifact@v5
         with:
-          pattern: playwright-vrt-status-shard-*
+          pattern: playwright-vrt-report-shard-*
           merge-multiple: true
-          path: vrt-shard-status/
+          path: vrt-shard-report/
 
       - name: Determine overall outcome
         id: overall-outcome
-        run: ls -1 vrt-shard-status/*.json | xargs -I{} jq -e '.outcome == "success"' {}
+        run: ls -1 vrt-shard-report/status-*.json | xargs -I{} jq -e '.outcome == "success"' {}
         continue-on-error: true
 
       - name: Add pass label
