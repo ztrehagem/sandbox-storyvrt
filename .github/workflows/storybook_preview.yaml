@@ -32,7 +32,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build storybook
-        run: pnpm exec storybook build
+        run: pnpm exec storybook build -o storybook-static --stats-json storybook-static
 
       - name: Upload vrt artifact
         uses: actions/upload-artifact@v4
@@ -65,6 +65,10 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - run: git config --global --add safe.directory $PWD
 
       - run: npm i -g pnpm@10
 
