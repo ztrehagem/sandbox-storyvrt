@@ -10,6 +10,7 @@
     "playwright:ui": "playwright test --ui",
     "playwright:vrt": "playwright test --project 'vrt:*' --pass-with-no-tests",
     "playwright:vrt:update": "VRT_ALL=true playwright test --project 'vrt:*' --update-snapshots",
+    "playwright:vrt:download": "gh run download --name playwright-vrt-snapshots --dir playwright-snapshots/vrt/",
     "eslint": "eslint .",
     "prettier": "prettier --ignore-path .gitignore --check .",
     "prettier.fix": "pnpm run prettier --write"
