@@ -1,0 +1,187 @@
+name: Storybook Preview
+
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      PLAYWRIGHT_VERSION: ${{ steps.get-playwright-version.outputs.PLAYWRIGHT_VERSION }}
+      EXPECTED_SNAPSHOT_RUN_ID: ${{ steps.get-run-id.outputs.EXPECTED_SNAPSHOT_RUN_ID }}
+    permissions:
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - run: npm i -g pnpm@10
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build storybook
+        run: pnpm exec storybook build -o storybook-static --stats-json storybook-static
+
+      - name: Upload vrt artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: storybook-preview-pr-${{ github.event.pull_request.number }}
+          path: storybook-static/
+          overwrite: true
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: Get playwright version
+        id: get-playwright-version
+        run: echo "PLAYWRIGHT_VERSION=$(pnpm exec playwright --version | cut -d ' ' -f 2)" >> $GITHUB_OUTPUT
+
+      - name: Get expected snapshot run-id
+        id: get-run-id
+        run: echo "EXPECTED_SNAPSHOT_RUN_ID=$(gh run list --repo ${{ github.repository }} --branch main --workflow Storybook --status success --limit 1 --json databaseId --jq .[0].databaseId)" >> $GITHUB_OUTPUT
+
+  vrt:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.build.outputs.PLAYWRIGHT_VERSION }}
+    strategy:
+      matrix:
+        shardIndex: [1, 2]
+        shardTotal: [2]
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - run: git config --global --add safe.directory $PWD
+
+      - run: npm i -g pnpm@10
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download built storybook
+        uses: actions/download-artifact@v5
+        with:
+          name: storybook-preview-pr-${{ github.event.pull_request.number }}
+          path: storybook-static/
+
+      - name: Download expected snapshots
+        uses: actions/download-artifact@v5
+        with:
+          name: playwright-vrt-snapshots
+          path: playwright-snapshots/vrt/
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.build.outputs.EXPECTED_SNAPSHOT_RUN_ID }}
+
+      - name: Run VRT
+        id: vrt
+        env:
+          PLAYWRIGHT_BLOB_OUTPUT_DIR: vrt-shard-report
+        run: pnpm run playwright:vrt --reporter blob,list --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
+        continue-on-error: true
+
+      - name: Create status file
+        run: |
+          echo '{"outcome": "${{ steps.vrt.outcome }}"}' > vrt-shard-report/status-${{ matrix.shardIndex }}.json
+
+      - name: Upload sharded report
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-vrt-report-shard-${{ matrix.shardIndex }}
+          path: vrt-shard-report/
+          retention-days: 1
+          if-no-files-found: error
+
+  vrt-report:
+    needs:
+      - build
+      - vrt
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    container:
+      image: mcr.microsoft.com/playwright:v${{ needs.build.outputs.PLAYWRIGHT_VERSION }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - run: npm i -g pnpm@10
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: lts/*
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download sharded reports
+        uses: actions/download-artifact@v5
+        with:
+          pattern: playwright-vrt-report-shard-*
+          merge-multiple: true
+          path: vrt-shard-report/
+
+      - name: Merge sharded reports into HTML report
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report
+        run: pnpm exec playwright merge-reports --reporter html,list,github vrt-shard-report
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-pr-${{ github.event.pull_request.number }}
+          path: playwright-report/
+          overwrite: true
+          retention-days: 14
+          if-no-files-found: error
+
+  vrt-label:
+    needs: vrt
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+    permissions:
+      pull-requests: write
+      id-token: write
+      repository-projects: read
+    steps:
+      - name: Download status files
+        uses: actions/download-artifact@v5
+        with:
+          pattern: playwright-vrt-report-shard-*
+          merge-multiple: true
+          path: vrt-shard-report/
+
+      - name: Determine overall outcome
+        id: overall-outcome
+        run: ls -1 vrt-shard-report/status-*.json | xargs -I{} jq -e '.outcome == "success"' {}
+        continue-on-error: true
+
+      - name: Add pass label
+        if: steps.overall-outcome.outcome == 'success'
+        run: gh pr edit ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --add-label 'vrt:pass' --remove-label 'vrt:diff'
+
+      - name: Add diff label
+        if: steps.overall-outcome.outcome == 'failure'
+        run: gh pr edit ${{ github.event.pull_request.number }} --repo ${{ github.repository }} --remove-label 'vrt:pass' --add-label 'vrt:diff'

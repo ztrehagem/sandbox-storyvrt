@@ -1,5 +1,7 @@
-import test, { expect } from "@playwright/test";
-import { stories } from "./stories";
+import { test, expect } from "@playwright/test";
+import { getAffectedStories } from "./stories";
+
+const affectedStories = await getAffectedStories();
 
 const cases = [
   {
@@ -8,7 +10,7 @@ const cases = [
       width: 360,
       height: 800,
     },
-    stories,
+    stories: affectedStories,
   },
   {
     name: "tablet",
@@ -16,7 +18,7 @@ const cases = [
       width: 768,
       height: 1024,
     },
-    stories,
+    stories: affectedStories,
   },
   {
     name: "laptop",
@@ -24,7 +26,7 @@ const cases = [
       width: 1366,
       height: 768,
     },
-    stories,
+    stories: affectedStories,
   },
   {
     name: "desktop",
@@ -32,7 +34,7 @@ const cases = [
       width: 1920,
       height: 1080,
     },
-    stories,
+    stories: affectedStories,
   },
 ];
 
