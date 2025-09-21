@@ -49,7 +49,7 @@ jobs:
 
       - name: Get expected snapshot run-id
         id: get-run-id
-        run: echo "EXPECTED_SNAPSHOT_RUN_ID=$(gh run list --repo ${{ github.repository }} --branch main --workflow Storybook --limit 1 --json databaseId --jq .[0].databaseId)" >> $GITHUB_OUTPUT
+        run: echo "EXPECTED_SNAPSHOT_RUN_ID=$(gh run list --repo ${{ github.repository }} --branch main --workflow Storybook --status success --limit 1 --json databaseId --jq .[0].databaseId)" >> $GITHUB_OUTPUT
 
   vrt:
     needs: build
